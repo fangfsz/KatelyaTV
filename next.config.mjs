@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
-const withSerwistInit = require('@serwist/next').default;
+import { withSerwist } from '@serwist/next';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -17,7 +17,7 @@ const nextConfig = {
   },
 
   webpack(config) {
-    // SVG 处理规则（保持你原有逻辑）
+    // SVG 处理规则（保持原有逻辑）
     const fileLoaderRule = config.module.rules.find((rule) =>
       rule.test?.test?.('.svg')
     );
@@ -44,12 +44,10 @@ const nextConfig = {
   },
 };
 
-// Serwist 配置（等同你原 next-pwa 能力）
-const withSerwist = withSerwistInit({
+// Serwist 配置（等效原 next-pwa 能力）
+export default withSerwist({
   swSrc: './src/app/sw.ts',
   swDest: 'public/sw.js',
   cacheOnNavigation: true,
   // 如需自定义缓存策略，在此追加 runtimeCaching 数组
-});
-
-module.exports = withSerwist(nextConfig);
+})(nextConfig);
