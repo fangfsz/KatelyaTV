@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
-import { withSerwist } from '@serwist/next';
+import withSerwist from '@serwist/next'; // ✅ 默认导入
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -12,7 +12,7 @@ const nextConfig = {
     unoptimized: true,
     remotePatterns: [
       { protocol: 'https', hostname: '**' },
-      { protocol: 'http', hostname: '**' },
+      { protocol: 'http',  hostname: '**' },
     ],
   },
 
@@ -44,7 +44,6 @@ const nextConfig = {
   },
 };
 
-// Serwist 配置（等效原 next-pwa 能力）
 export default withSerwist({
   swSrc: './src/app/sw.ts',
   swDest: 'public/sw.js',
