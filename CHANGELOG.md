@@ -4,6 +4,20 @@
 
 ## [0.6.0-katelya] - 2025-09-03
 
+## [0.7.0-katelya] - 2025-09-24
+
+### 🎉 新增/改进
+- ✅ 集中管理并类型安全合并用户设置（`src/lib/settings.ts`），修复多个存储后端在合并 Partial<UserSettings> 时的 TypeScript 错误
+- ♻️ 更新 Redis / Kvrocks / Upstash / D1 的 `updateUserSettings` 实现以使用共享合并逻辑，避免未定义字段流入最终对象
+- 🧭 优化 `config` 加载逻辑：在 Docker 运行时安全读取 `config.json`，避免在 edge 构建中直接解析 Node-only 模块
+- 🛠️ 修复 `src/app/sw.ts` 的类型声明，移除 `any` 警告
+- 🧹 移除 `pages:build` 脚本中的已弃用标志 `--experimental-minify`
+
+### 🐛 修复
+- 修复因对象展开与显式覆盖导致的重复键警告
+- 修复若干 ESLint/类型检查相关警告，确保构建通过
+
+
 ### 🎉 新增功能
 - 🖱️ **用户界面优化**
   - 在用户菜单中新增"TVBox配置"按钮，提供便捷的配置入口
