@@ -1,6 +1,7 @@
 /* eslint-disable no-console, @typescript-eslint/no-explicit-any, @typescript-eslint/no-non-null-assertion */
 
 import { AdminConfig } from './admin.types';
+import { mergeUserSettings } from './settings';
 import { EpisodeSkipConfig, Favorite, IStorage, PlayRecord, User, UserSettings } from './types';
 
 // 搜索历史最大条数
@@ -47,12 +48,12 @@ function getD1Database(): D1Database {
       return globalDB as D1Database;
     }
   }
-  
+
   // 回退到 process.env（用于本地开发）
   if (process.env.DB) {
     return (process.env as any).DB as D1Database;
   }
-  
+
   throw new Error('D1 database not available');
 }
 
@@ -450,7 +451,7 @@ export class D1Storage implements IStorage {
         .all<{ username: string; created_at: string }>();
 
       const ownerUsername = process.env.USERNAME || 'admin';
-      
+
       return result.results.map((row) => ({
         username: row.username,
         role: row.username === ownerUsername ? 'owner' : 'user',
@@ -564,7 +565,7 @@ export class D1Storage implements IStorage {
         .all<any>();
 
       const configs: { [key: string]: EpisodeSkipConfig } = {};
-      
+
       for (const row of result.results) {
         configs[row.key] = {
           source: row.source,
@@ -603,7 +604,7 @@ export class D1Storage implements IStorage {
         .prepare('SELECT settings FROM user_settings WHERE username = ?')
         .bind(userName)
         .first();
-      
+
       if (row && row.settings) {
         return JSON.parse(row.settings as string) as UserSettings;
       }
@@ -643,14 +644,9 @@ export class D1Storage implements IStorage {
       theme: 'auto',
       language: 'zh-CN',
       auto_play: false,
-      video_quality: 'auto'
+      video_quality: 'auto',
     };
-    const updated: UserSettings = { 
-      ...defaultSettings, 
-      ...current, 
-      ...settings,
-      filter_adult_content: settings.filter_adult_content ?? current?.filter_adult_content ?? true
-    };
+    const updated = mergeUserSettings(defaultSettings, current ?? undefined, settings);
     await this.setUserSettings(userName, updated);
   }
 }

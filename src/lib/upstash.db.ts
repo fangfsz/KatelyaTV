@@ -3,6 +3,7 @@
 import { Redis } from '@upstash/redis';
 
 import { AdminConfig } from './admin.types';
+import { mergeUserSettings } from './settings';
 import { EpisodeSkipConfig, Favorite, IStorage, PlayRecord, User, UserSettings } from './types';
 
 // 搜索历史最大条数
@@ -247,7 +248,7 @@ export class UpstashRedisStorage implements IStorage {
   async getAllUsers(): Promise<User[]> {
     const keys = await withRetry(() => this.client.keys('u:*:pwd'));
     const ownerUsername = process.env.USERNAME || 'admin';
-    
+
     const usernames = keys
       .map((k) => {
         const match = k.match(/^u:(.+?):pwd$/);
@@ -388,14 +389,10 @@ export class UpstashRedisStorage implements IStorage {
       theme: 'auto',
       language: 'zh-CN',
       auto_play: false,
-      video_quality: 'auto'
+      video_quality: 'auto',
     };
-    const updated: UserSettings = { 
-      ...defaultSettings, 
-      ...current, 
-      ...settings,
-      filter_adult_content: settings.filter_adult_content ?? current?.filter_adult_content ?? true
-    };
+
+    const updated = mergeUserSettings(defaultSettings, current ?? undefined, settings);
     await this.setUserSettings(userName, updated);
   }
 }

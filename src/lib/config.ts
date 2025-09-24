@@ -48,10 +48,19 @@ async function initConfig() {
   }
 
   if (process.env.DOCKER_ENV === 'true') {
+    // Access `require` dynamically to avoid bundlers trying to statically include fs/path.
+    // Keep this in a try/catch to make the intent clear and avoid eslint false positives.
     // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    const _require = eval('require') as NodeRequire;
-    const fs = _require('fs') as typeof import('fs');
-    const path = _require('path') as typeof import('path');
+    let fs: typeof import('fs');
+    let path: typeof import('path');
+    try {
+      // Use eval('require') to avoid static bundling of Node modules into browser builds
+      const _require = eval('require') as NodeRequire;
+      fs = _require('fs') as typeof import('fs');
+      path = _require('path') as typeof import('path');
+    } catch (err) {
+      throw new Error('Failed to load fs/path via dynamic require in Docker environment');
+    }
 
     const configPath = path.join(process.cwd(), 'config.json');
     const raw = fs.readFileSync(configPath, 'utf-8');
@@ -225,92 +234,92 @@ async function initConfig() {
 
 export async function getConfig(): Promise<AdminConfig> {
   const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
-  
+
   if (process.env.DOCKER_ENV === 'true' || storageType === 'localstorage') {
     await initConfig();
     return cachedConfig;
   }
-  
+
   // 非 docker 环境且 DB 存储，直接读 db 配置
   try {
     const storage = getStorage();
     let adminConfig: AdminConfig | null = null;
-    
+
     if (storage && typeof (storage as any).getAdminConfig === 'function') {
       adminConfig = await (storage as any).getAdminConfig();
     }
-    
+
     if (adminConfig) {
       // 合并一些环境变量配置
       adminConfig.SiteConfig.SiteName = process.env.SITE_NAME || 'KatelyaTV';
-    adminConfig.SiteConfig.Announcement =
-      process.env.ANNOUNCEMENT ||
-      '本网站仅提供影视信息搜索服务，所有内容均来自第三方网站。本站不存储任何视频资源，不对任何内容的准确性、合法性、完整性负责。';
-    adminConfig.UserConfig.AllowRegister =
-      process.env.NEXT_PUBLIC_ENABLE_REGISTER === 'true';
-    adminConfig.SiteConfig.ImageProxy =
-      process.env.NEXT_PUBLIC_IMAGE_PROXY || '';
-    adminConfig.SiteConfig.DoubanProxy =
-      process.env.NEXT_PUBLIC_DOUBAN_PROXY || '';
+      adminConfig.SiteConfig.Announcement =
+        process.env.ANNOUNCEMENT ||
+        '本网站仅提供影视信息搜索服务，所有内容均来自第三方网站。本站不存储任何视频资源，不对任何内容的准确性、合法性、完整性负责。';
+      adminConfig.UserConfig.AllowRegister =
+        process.env.NEXT_PUBLIC_ENABLE_REGISTER === 'true';
+      adminConfig.SiteConfig.ImageProxy =
+        process.env.NEXT_PUBLIC_IMAGE_PROXY || '';
+      adminConfig.SiteConfig.DoubanProxy =
+        process.env.NEXT_PUBLIC_DOUBAN_PROXY || '';
 
-    // 合并文件中的源信息
-    fileConfig = runtimeConfig as unknown as ConfigFileStruct;
-    const apiSiteEntries = Object.entries(fileConfig.api_site);
-    const existed = new Set((adminConfig.SourceConfig || []).map((s) => s.key));
-    apiSiteEntries.forEach(([key, site]) => {
-      if (!existed.has(key)) {
-        adminConfig!.SourceConfig.push({
-          key,
-          name: site.name,
-          api: site.api,
-          detail: site.detail,
-          from: 'config',
-          disabled: false,
-          is_adult: (site as any).is_adult || false, // 确保处理 is_adult 字段
+      // 合并文件中的源信息
+      fileConfig = runtimeConfig as unknown as ConfigFileStruct;
+      const apiSiteEntries = Object.entries(fileConfig.api_site);
+      const existed = new Set((adminConfig.SourceConfig || []).map((s) => s.key));
+      apiSiteEntries.forEach(([key, site]) => {
+        if (!existed.has(key)) {
+          adminConfig!.SourceConfig.push({
+            key,
+            name: site.name,
+            api: site.api,
+            detail: site.detail,
+            from: 'config',
+            disabled: false,
+            is_adult: (site as any).is_adult || false, // 确保处理 is_adult 字段
+          });
+        }
+      });
+
+      // 检查现有源是否在 fileConfig.api_site 中，如果不在则标记为 custom
+      const apiSiteKeys = new Set(apiSiteEntries.map(([key]) => key));
+      adminConfig.SourceConfig.forEach((source) => {
+        if (!apiSiteKeys.has(source.key)) {
+          source.from = 'custom';
+        } else {
+          // 更新现有源的 is_adult 字段
+          const siteConfig = fileConfig.api_site[source.key];
+          if (siteConfig) {
+            source.is_adult = (siteConfig as any).is_adult || false;
+          }
+        }
+      });
+
+      const ownerUser = process.env.USERNAME || '';
+      // 检查配置中的站长用户是否和 USERNAME 匹配，如果不匹配则降级为普通用户
+      let containOwner = false;
+      adminConfig.UserConfig.Users.forEach((user) => {
+        if (user.username !== ownerUser && user.role === 'owner') {
+          user.role = 'user';
+        }
+        if (user.username === ownerUser) {
+          containOwner = true;
+          user.role = 'owner';
+        }
+      });
+
+      // 如果不在则添加
+      if (!containOwner) {
+        adminConfig.UserConfig.Users.unshift({
+          username: ownerUser,
+          role: 'owner',
         });
       }
-    });
-
-    // 检查现有源是否在 fileConfig.api_site 中，如果不在则标记为 custom
-    const apiSiteKeys = new Set(apiSiteEntries.map(([key]) => key));
-    adminConfig.SourceConfig.forEach((source) => {
-      if (!apiSiteKeys.has(source.key)) {
-        source.from = 'custom';
-      } else {
-        // 更新现有源的 is_adult 字段
-        const siteConfig = fileConfig.api_site[source.key];
-        if (siteConfig) {
-          source.is_adult = (siteConfig as any).is_adult || false;
-        }
-      }
-    });
-
-    const ownerUser = process.env.USERNAME || '';
-    // 检查配置中的站长用户是否和 USERNAME 匹配，如果不匹配则降级为普通用户
-    let containOwner = false;
-    adminConfig.UserConfig.Users.forEach((user) => {
-      if (user.username !== ownerUser && user.role === 'owner') {
-        user.role = 'user';
-      }
-      if (user.username === ownerUser) {
-        containOwner = true;
-        user.role = 'owner';
-      }
-    });
-
-    // 如果不在则添加
-    if (!containOwner) {
-      adminConfig.UserConfig.Users.unshift({
-        username: ownerUser,
-        role: 'owner',
-      });
+      cachedConfig = adminConfig;
+    } else {
+      // DB 无配置，执行一次初始化
+      await initConfig();
     }
-    cachedConfig = adminConfig;
-  } else {
-    // DB 无配置，执行一次初始化
-    await initConfig();
-  }
-  return cachedConfig;
+    return cachedConfig;
   } catch (error) {
     // 如果数据库访问失败，回退到默认配置
     await initConfig();
@@ -404,13 +413,13 @@ export async function getCacheTime(): Promise<number> {
 
 export async function getAvailableApiSites(filterAdult = false): Promise<ApiSite[]> {
   const config = await getConfig();
-  
+
   // 防御性检查：确保 SourceConfig 存在且为数组
   if (!config.SourceConfig || !Array.isArray(config.SourceConfig)) {
     console.warn('SourceConfig is missing or not an array, returning empty array');
     return [];
   }
-  
+
   // 防御性处理：为每个源确保 is_adult 字段存在
   let sites = config.SourceConfig
     .filter((s) => !s.disabled)
@@ -418,12 +427,12 @@ export async function getAvailableApiSites(filterAdult = false): Promise<ApiSite
       ...s,
       is_adult: s.is_adult === true // 严格检查，只有明确为 true 的才是成人内容
     }));
-  
+
   // 如果需要过滤成人内容，则排除标记为成人内容的资源站
   if (filterAdult) {
     sites = sites.filter((s) => !s.is_adult);
   }
-  
+
   return sites.map((s) => ({
     key: s.key,
     name: s.name,
@@ -435,16 +444,16 @@ export async function getAvailableApiSites(filterAdult = false): Promise<ApiSite
 // 根据用户设置动态获取可用资源站（你的想法实现）
 export async function getFilteredApiSites(userName?: string): Promise<ApiSite[]> {
   const config = await getConfig();
-  
+
   // 防御性检查：确保 SourceConfig 存在且为数组
   if (!config.SourceConfig || !Array.isArray(config.SourceConfig)) {
     console.warn('SourceConfig is missing or not an array, returning empty array');
     return [];
   }
-  
+
   // 默认过滤成人内容
   let shouldFilterAdult = true;
-  
+
   // 如果提供了用户名，获取用户设置
   if (userName) {
     try {
@@ -456,7 +465,7 @@ export async function getFilteredApiSites(userName?: string): Promise<ApiSite[]>
       console.warn('Failed to get user settings, using default filter:', error);
     }
   }
-  
+
   // 防御性处理：为每个源确保 is_adult 字段存在
   let sites = config.SourceConfig
     .filter((s) => !s.disabled)
@@ -464,12 +473,12 @@ export async function getFilteredApiSites(userName?: string): Promise<ApiSite[]>
       ...s,
       is_adult: s.is_adult === true // 严格检查，只有明确为 true 的才是成人内容
     }));
-  
+
   // 根据用户设置动态过滤成人内容源
   if (shouldFilterAdult) {
     sites = sites.filter((s) => !s.is_adult);
   }
-  
+
   return sites.map((s) => ({
     key: s.key,
     name: s.name,
@@ -481,17 +490,17 @@ export async function getFilteredApiSites(userName?: string): Promise<ApiSite[]>
 // 获取成人内容资源站
 export async function getAdultApiSites(): Promise<ApiSite[]> {
   const config = await getConfig();
-  
+
   // 防御性检查：确保 SourceConfig 存在且为数组
   if (!config.SourceConfig || !Array.isArray(config.SourceConfig)) {
     console.warn('SourceConfig is missing or not an array, returning empty array');
     return [];
   }
-  
+
   // 防御性处理：严格检查成人内容标记
   const adultSites = config.SourceConfig
     .filter((s) => !s.disabled && s.is_adult === true); // 只有明确为 true 的才被认为是成人内容
-  
+
   return adultSites.map((s) => ({
     key: s.key,
     name: s.name,
